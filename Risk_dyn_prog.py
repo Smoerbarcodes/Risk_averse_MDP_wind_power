@@ -76,7 +76,7 @@ def f(W_t):
     return 1.5 - math.log(W_t)
 
 
-def R(Q_t,P_t,W_t,e_t):
+def R(Q_t,P_t,e_t):
     if P_t >= 0 and Q_t < e_t:
         return Q_t*P_t + K_p_plus*P_t*(e_t-Q_t)
     elif P_t >= 0 and Q_t >= e_t:
@@ -93,7 +93,7 @@ def s_hat(S_t,Q_t,fW_t):
     elif fW_t >= Q_t/tau >= 0:
         return - min(C_S-S_t,C_C, (fW_t-Q_t/tau)/theta)
     elif fW_t >= 0 > tau*Q_t:
-        return -min(C_s-S_t,C_C,(fW_t-tau*Q_t)*theta)
+        return -min(C_S-S_t,C_C,(fW_t-tau*Q_t)*theta)
 
 def w_hat(S_t,Q_t,fW_t):
     if Q_t/tau >= fW_t >= 0:
@@ -114,12 +114,13 @@ def E(Q_t,S_t,fW_t):
 
 # ---------------------------------------------------------
 
-def price_transition(W_t):
-    price_trans = dict()
+def price_transition(P_t):
+    idx = np.where(P==P_t)
+    return [(state,prob) for state in P and prob in P_trans_price[idx]]
 
 
 
-# ------------------------------------------------------
+#-----------------------------------------------------------
 T = 168
 
 S_1 = find_nearest(S,C_S/2)
@@ -132,6 +133,22 @@ def VIA(S,Q,W,P,J):
     U = np.zeros(len(S),len(Q),len(W),len(P),len(J))
     Q = np.zeros_like(U)
     for t in reversed(range(T)):
+        for s in range(S):
+            for q in range(Q):
+                for w in range(W):
+                    for p in range(P):
+                        for j in range(J):
+                            def V(pi):
+                                V_plus1 = 0
+                                fW_t = f(W[w])
+                                shat = s_hat(S[s],Q[q],fW_t)
+                                ehat = E(Q[q],S[s],fW_t)
+                                what = w_hat(S[s],Q[s],fW_t)
+                                for p_ in range(P):
+                                    for w_ in range(w):
+                                        V_plus1 += U[s][q][w_][p_][j]*P_trans_wind[s_]*P_trans_price[P_]
+                                return -(R(q,p,ehat)+V_plus1)
+
 
 
 # Value-Iteration Algorithm
