@@ -2,11 +2,11 @@ import math
 
 import numpy as np
 import scipy
-import matplotlib.pyplot as plt
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator
-import random
-import time
+#import matplotlib.pyplot as plt
+#from matplotlib import cm
+#from matplotlib.ticker import LinearLocator
+#import random
+#import time
 
 #------------------------------------------------
 def find_nearest(array,value):
@@ -73,7 +73,28 @@ Q = np.arange(-C_T,tau*C_T,eta_a)
 
 # Defining functions
 def f(W_t):
-    return 1.5 - math.log(W_t)
+    if W_t == 0:
+        return 0
+    elif W_t == 1:
+        return 0.15
+    elif W_t == 2:
+        return 0.35
+    elif W_t == 3:
+        return 0.5
+    elif W_t == 4:
+        return 0.75
+    elif W_t == 5:
+        return 1
+    elif W_t == 6:
+        return 1.25
+    elif W_t == 7:
+        return 1.4
+    elif W_t == 8:
+        return 1.45
+    elif W_t == 9:
+        return 1.48
+    elif W_t == 10:
+        return 1.5
 
 
 def R(Q_t,P_t,e_t):
@@ -114,11 +135,6 @@ def E(Q_t,S_t,fW_t):
 
 # ---------------------------------------------------------
 
-def price_transition(P_t):
-    idx = np.where(P==P_t)
-    return [(state,prob) for state in P and prob in P_trans_price[idx]]
-
-
 
 #-----------------------------------------------------------
 T = 168
@@ -129,27 +145,45 @@ xi_1 = 5
 rho_1 = 0
 j_1 = 0
 
-def VIA(S,Q,W,P,J):
-    U = np.zeros(len(S),len(Q),len(W),len(P),len(J))
-    Q = np.zeros_like(U)
+def VIA_risk_neutral(S,Q,W,P,J):
+    U = np.zeros((len(S),len(Q),len(W),len(P),len(J)))
+    Y = np.zeros_like(U)
+    PI = np.zeros_like(U)
+    M_ns = []
+    m_ns = []
     for t in reversed(range(T)):
-        for s in range(S):
-            for q in range(Q):
-                for w in range(W):
-                    for p in range(P):
-                        for j in range(J):
+        interp = scipy.interpolate.RegularGridInterpolator((S, Q,W,P,J), U, fill_value=None,
+                                                           bounds_error=False)  # interpolation from scipy
+        for s in range(len(S)):
+            for q in range(len(Q)):
+                for w in range(len(W)):
+                    for p in range(len(P)):
+                        for j in range(len(J)):
                             def V(pi):
                                 V_plus1 = 0
                                 fW_t = f(W[w])
                                 shat = s_hat(S[s],Q[q],fW_t)
                                 ehat = E(Q[q],S[s],fW_t)
                                 what = w_hat(S[s],Q[s],fW_t)
-                                for p_ in range(P):
-                                    for w_ in range(w):
-                                        V_plus1 += U[s][q][w_][p_][j]*P_trans_wind[s_]*P_trans_price[P_]
-                                return -(R(q,p,ehat)+V_plus1)
+                                for p_ in range(len(P)):
+                                    for w_ in range(len(W)):
+                                        V_plus1 += interp((s+shat,pi,w_,p_,j))*P_trans_wind[w][w_]*P_trans_price[p][p_]
+                                return R(q,p,ehat)+V_plus1
+                            l = [V(pi) for pi in Q]
+                            Y[s, q, w, p, j] = max(l)
+                            PI[s,q,w,p,j] = Q[l.index(max(l))]
+                            print(PI)
+
+        print(t, "max", np.max(Y - U), "min", np.min(Y - U))
+        M_ns.append(np.max(Y - U))
+        m_ns.append(np.min(Y - U))
+        U = np.copy(Y)
+
+    return PI, U, M_ns, m_ns
 
 
+#----------------------------------------------------------------
 
-# Value-Iteration Algorithm
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,J)
 
+print(PI)
