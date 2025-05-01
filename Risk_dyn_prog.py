@@ -6,7 +6,7 @@ import scipy
 #from matplotlib import cm
 #from matplotlib.ticker import LinearLocator
 #import random
-#import time
+import time
 
 #------------------------------------------------
 def find_nearest(array,value):
@@ -67,9 +67,12 @@ P = np.array([-52.93,-26.47,0,26.47,52.93])
 J = np.linspace(-350,600,20)
 W = np.array([0,1,2,3,4,5,6,7,8,9,10])
 
+
 # Action space
 S = np.arange(0,C_S,eta_a)
 Q = np.arange(-C_T,tau*C_T,eta_a)
+
+
 
 # Defining functions
 def f(W_t):
@@ -99,13 +102,13 @@ def f(W_t):
 
 def R(Q_t,P_t,e_t):
     if P_t >= 0 and Q_t < e_t:
-        return Q_t*P_t + K_p_plus*P_t*(e_t-Q_t)
+        return K_p_plus*P_t*(e_t-Q_t)
     elif P_t >= 0 and Q_t >= e_t:
-        return Q_t*P_t - K_n_plus*P_t*(Q_t - e_t)
+        return K_n_plus*P_t*(Q_t - e_t)
     elif P_t < 0 and Q_t < e_t:
-        return Q_t*P_t + K_n_minus*P_t*(e_t - Q_t)
+        return K_n_minus*P_t*(e_t - Q_t)
     elif P_t < 0 and Q_t >= e_t:
-        return Q_t*P_t - K_n_minus*P_t*(Q_t - e_t)
+        return K_n_minus*P_t*(Q_t - e_t)
 
 
 def s_hat(S_t,Q_t,fW_t):
@@ -133,9 +136,6 @@ def E(Q_t,S_t,fW_t):
         return Q_t
 
 
-# ---------------------------------------------------------
-
-
 #-----------------------------------------------------------
 T = 168
 
@@ -145,38 +145,97 @@ xi_1 = 5
 rho_1 = 0
 j_1 = 0
 
-def VIA_risk_neutral(S,Q,W,P,J):
-    U = np.zeros((len(S),len(Q),len(W),len(P),len(J)))
+#def VIA_risk_neutral(S,Q,W,P,eps=1,max_iter=40):
+#    U = np.zeros((len(S),len(Q),len(W),len(P)))
+#    Y = np.zeros_like(U)
+#    PI = np.zeros_like(U)
+#    M_ns = []
+#    m_ns = []
+#    t = 0
+#    while True:
+#        t += 1
+#        start_time = time.time()
+#        for s in range(len(S)):
+#            for q in range(len(Q)):
+#                for w in range(len(W)):
+#                    fW_t = f(W[w])
+#                    shat = s_hat(S[s], Q[q], fW_t)
+#                    s_ny = find_nearest(S,s+shat)
+#                    s_ny_idx = int(np.where(S==s_ny)[0][0])
+#                    ehat = E(Q[q], S[s], fW_t)
+#                    for p in range(len(P)):
+#                        def V(pi):
+#                            V_plus1 = 0
+#                            for p_ in range(len(P)):
+#                                for w_ in range(len(W)):
+#                                    V_plus1 += U[s_ny_idx,pi,w_,p_]*P_trans_wind[w][w_]*P_trans_price[p][p_]
+#                            return R(Q[q],P[p],ehat)+V_plus1
+#                        values = [V(pi) for pi in range(len(Q))]
+#                        Y[s,q,w,p] = max(values)
+#                        PI[s,q,w,p] = Q[np.argmax(values)]
+#        end_time = time.time()
+#        print(t, "max", np.max(Y - U), "min", np.min(Y - U), "Running time:", end_time-start_time)
+#        M_ns.append(np.max(Y - U))
+#        m_ns.append(np.min(Y - U))
+#        if np.max(Y - U) - np.min(Y - U) < eps*np.min(Y - U):
+#            break
+#        if t > max_iter:
+#            break
+#        U = np.copy(Y)
+#
+#    return PI, U, M_ns, m_ns
+
+def VIA_risk_neutral(S, Q, W, P, discount = 0.8, eps=1/10, max_iterations=40):
+    len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
+    U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
     PI = np.zeros_like(U)
     M_ns = []
     m_ns = []
-    for t in reversed(range(T)):
-        interp = scipy.interpolate.RegularGridInterpolator((S, Q,W,P,J), U, fill_value=None,
-                                                           bounds_error=False)  # interpolation from scipy
-        for s in range(len(S)):
-            for q in range(len(Q)):
-                for w in range(len(W)):
-                    for p in range(len(P)):
-                        for j in range(len(J)):
-                            def V(pi):
-                                V_plus1 = 0
-                                fW_t = f(W[w])
-                                shat = s_hat(S[s],Q[q],fW_t)
-                                ehat = E(Q[q],S[s],fW_t)
-                                what = w_hat(S[s],Q[s],fW_t)
-                                for p_ in range(len(P)):
-                                    for w_ in range(len(W)):
-                                        V_plus1 += interp((s+shat,pi,w_,p_,j))*P_trans_wind[w][w_]*P_trans_price[p][p_]
-                                return R(q,p,ehat)+V_plus1
-                            l = [V(pi) for pi in Q]
-                            Y[s, q, w, p, j] = max(l)
-                            PI[s,q,w,p,j] = Q[l.index(max(l))]
-                            print(PI)
+    t = 0
 
-        print(t, "max", np.max(Y - U), "min", np.min(Y - U))
+    while True:
+        t += 1
+        start_time = time.time()
+
+        for s in range(len_S):
+            for q in range(len_Q):
+                for w in range(len_W):
+                    fW_t = f(W[w])
+                    shat = s_hat(S[s], Q[q], fW_t)
+                    s_ny = find_nearest(S, S[s] + shat)
+                    s_ny_idx = int(np.where(S == s_ny)[0][0])
+                    ehat = E(Q[q], S[s], fW_t)
+                    for p in range(len_P):
+                        def V(pi):
+                            V_plus1 = np.sum(
+                                U[s_ny_idx, pi, :, :]* P_trans_wind[w, :, None] * P_trans_price[p,None, :]
+                            )
+                            return R(Q[q], P[p], ehat) + discount*V_plus1
+                        values = [V(pi) for pi in range(len_Q)]
+                        Y[s, q, w, p] = max(values)
+                        PI[s, q, w, p] = Q[np.argmax(values)]
+
+        end_time = time.time()
+        print(
+            t,
+            "max",
+            np.max(Y - U),
+            "min",
+            np.min(Y - U),
+            "Running time:",
+            end_time - start_time,
+        )
         M_ns.append(np.max(Y - U))
         m_ns.append(np.min(Y - U))
+
+        if np.max(Y - U) - np.min(Y - U) < eps * np.min(Y - U):
+            print("Converged")
+            break
+        if t > max_iterations:
+            print("Max iterations reached")
+            break
+
         U = np.copy(Y)
 
     return PI, U, M_ns, m_ns
@@ -184,6 +243,67 @@ def VIA_risk_neutral(S,Q,W,P,J):
 
 #----------------------------------------------------------------
 
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,J)
 
-print(PI)
+#----------------------------------------------------------------
+# Risk preferences
+
+def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, risk_param = 0.1):
+    len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
+    U = np.zeros((len_S, len_Q, len_W, len_P))
+    Y = np.zeros_like(U)
+    PI = np.zeros_like(U)
+    M_ns = []
+    m_ns = []
+    t = 0
+
+    while True:
+        t += 1
+        start_time = time.time()
+
+        for s in range(len_S):
+            for q in range(len_Q):
+                for w in range(len_W):
+                    fW_t = f(W[w])
+                    shat = s_hat(S[s], Q[q], fW_t)
+                    s_ny = find_nearest(S, S[s] + shat)
+                    s_ny_idx = int(np.where(S == s_ny)[0][0])
+                    ehat = E(Q[q], S[s], fW_t)
+                    for p in range(len_P):
+                        def V(pi):
+                            V_plus1 = np.sum(
+                                np.exp(-risk_param * (U[s_ny_idx, pi, :, :])) * P_trans_wind[w, :, None] * P_trans_price[p, None, :]
+                            )
+                            if math.isnan(V_plus1) == True:
+                                print(-risk_param*U[s_ny_idx, pi, :, :])
+                                print(np.exp(-risk_param*U[s_ny_idx, pi, :, :]))
+                            return R(Q[q], P[p], ehat)/1000 - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
+                        values = [V(pi) for pi in range(len_Q)]
+                        Y[s, q, w, p] = max(values)
+                        PI[s, q, w, p] = Q[np.argmax(values)]
+
+        end_time = time.time()
+        print(
+            t,
+            "max",
+            np.max(Y - U),
+            "min",
+            np.min(Y - U),
+            "Running time:",
+            end_time - start_time,
+        )
+        M_ns.append(np.max(Y - U))
+        m_ns.append(np.min(Y - U))
+
+        if np.max(Y - U) - np.min(Y - U) < eps * np.min(Y - U):
+            print("Converged")
+            break
+        if t > max_iterations:
+            print("Max iterations reached")
+            break
+
+        U = np.copy(Y)
+
+    return PI, U, M_ns, m_ns
+
+
+PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,eps=1/10, max_iterations=40)
