@@ -23,19 +23,20 @@ K_p_plus = 0.9
 K_n_minus = 0.9
 K_p_minus = 1.1
 K_n_plus = 0.9
-C_S = 400
+C_S = 200
 C_C = 50
 C_D = 50
 C_T = 200
 NPF = 0.0402
 eta_a = 25
 tau = 0.97
+theta = 0.85
+gamma = theta
 
 # Constants for electricity price
 kappa = 0.357
 sigma_p = 15.281
-theta = 0.85
-gamma = 0.85
+gamma_1_p = 39.7689
 P_trans_price = np.array([[0.350,0.585,0.065,0,0],
                           [0.052,0.539,0.409,0,0],
                           [0,0.167,0.666,0.167,0],
@@ -69,9 +70,11 @@ W = np.array([0,1,2,3,4,5,6,7,8,9,10])
 
 
 # Action space
-S = np.arange(0,C_S,eta_a)
-Q = np.arange(-C_T,tau*C_T,eta_a)
+S = np.arange(0,C_S+eta_a,eta_a)
+Q = np.arange(0,tau*C_T+eta_a,eta_a)
+#Q_old = np.arange(-C_T,tau*C_T+eta_a,eta_a)
 
+print(S)
 
 
 # Defining functions
@@ -99,16 +102,49 @@ def f(W_t):
     elif W_t == 10:
         return 1.5
 
-
 def R(Q_t,P_t,e_t):
+    if P_t >= 0 and Q_t <= e_t:
+        return Q_t*P_t
+    elif P_t >= 0 and Q_t > e_t:
+        return Q_t*P_t - 4*K_n_plus*P_t*(Q_t - e_t)
+    elif P_t < 0 and Q_t <= e_t:
+        return Q_t*P_t
+    elif P_t < 0 and Q_t > e_t:
+        return Q_t*P_t - 6*K_n_minus*P_t*(Q_t - e_t)
+
+
+def R_expanded(Q_t,P_t,e_t):
     if P_t >= 0 and Q_t < e_t:
         return Q_t*P_t+K_p_plus*P_t*(e_t-Q_t)
     elif P_t >= 0 and Q_t >= e_t:
-        return Q_t*P_t+K_n_plus*P_t*(Q_t - e_t)
+        if 80 >= Q_t - e_t > 40:
+            return Q_t * P_t - 1 * K_n_plus * P_t * (Q_t - e_t)
+        if 120 >= Q_t-e_t > 80:
+            return Q_t*P_t-1*K_n_plus*P_t*(Q_t - e_t)
+        elif Q_t-e_t > 120:
+            return Q_t*P_t-1*K_n_plus*P_t*(Q_t - e_t)
+        else:
+            return Q_t*P_t-K_n_plus*P_t*(Q_t - e_t)
+    elif P_t < 0 and Q_t < e_t:
+        return Q_t*P_t+K_p_minus*P_t*(e_t - Q_t)
+    elif P_t < 0 and Q_t >= e_t:
+        if 125 >= Q_t-e_t > 100:
+            return Q_t*P_t-1*K_n_minus*P_t*(Q_t - e_t)
+        elif Q_t-e_t > 125:
+            return Q_t*P_t-1*K_n_minus*P_t*(Q_t - e_t)
+        else:
+            return Q_t*P_t-K_n_minus*P_t*(Q_t - e_t)
+
+
+def R_OG(Q_t,P_t,e_t):
+    if P_t >= 0 and Q_t < e_t:
+        return Q_t*P_t+K_p_plus*P_t*(e_t-Q_t)
+    elif P_t >= 0 and Q_t >= e_t:
+        return Q_t*P_t-K_n_plus*P_t*(Q_t - e_t)
     elif P_t < 0 and Q_t < e_t:
         return Q_t*P_t+K_n_minus*P_t*(e_t - Q_t)
     elif P_t < 0 and Q_t >= e_t:
-        return Q_t*P_t+K_n_minus*P_t*(Q_t - e_t)
+        return Q_t*P_t-K_n_minus*P_t*(Q_t - e_t)
 
 
 def s_hat(S_t,Q_t,fW_t):
@@ -136,16 +172,24 @@ def E(Q_t,S_t,fW_t):
         return Q_t
 
 Reward_list = []
+difs_list = []
 for i in range(len(P)):
     for j in range(len(W)):
         for k in range(len(Q)):
             for l in range(len(S)):
                 fW_t = f(W[j])
-                Reward_list.append(R(Q[k],P[i],E(Q[k],S[l],fW_t)))
+                ehat = E(Q[k],S[l],fW_t)
+                Reward_list.append(R(Q[k],P[i],ehat))
+                difs_list.append(ehat-Q[k])
 max_reward = max(Reward_list)
 min_reward = min(Reward_list)
+max_dif = max(difs_list)
+min_dif = min(difs_list)
 print("Max reward:", max_reward)
 print("Min reward:", min_reward)
+print("Min dif:", min_dif)
+print("Max dif:", max_dif)
+
 #-----------------------------------------------------------
 T = 168
 
@@ -155,7 +199,7 @@ xi_0 = 5
 rho_0 = 0
 j_0 = 0
 
-def VIA_risk_neutral(S, Q, W, P, discount = 0.8, eps=1/10, max_iterations=40):
+def VIA_risk_neutral(S, Q, W, P, discount = 0.99, eps=1/10, max_iterations=40):
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
@@ -167,11 +211,10 @@ def VIA_risk_neutral(S, Q, W, P, discount = 0.8, eps=1/10, max_iterations=40):
     while True:
         t += 1
         start_time = time.time()
-
         for s in range(len_S):
             for q in range(len_Q):
                 for w in range(len_W):
-                    fW_t = f(W[w])
+                    fW_t = f(W[w])*100
                     shat = s_hat(S[s], Q[q], fW_t)
                     s_ny = find_nearest(S, S[s] + shat)
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
@@ -179,9 +222,9 @@ def VIA_risk_neutral(S, Q, W, P, discount = 0.8, eps=1/10, max_iterations=40):
                     for p in range(len_P):
                         def V(pi):
                             V_plus1 = np.sum(
-                                U[s_ny_idx, pi, :, :]* P_trans_wind[w, :, None] * P_trans_price[p,None, :]
+                                U[s_ny_idx, pi, :, :] * P_trans_wind[w, :, None] * P_trans_price[p,None, :]
                             )
-                            return R(Q[q], P[p], ehat) + discount*V_plus1
+                            return R(Q[q], P[p]+gamma_1_p, ehat) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
@@ -233,7 +276,7 @@ def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=4
         for s in range(len_S):
             for q in range(len_Q):
                 for w in range(len_W):
-                    fW_t = f(W[w])
+                    fW_t = f(W[w])*100
                     shat = s_hat(S[s], Q[q], fW_t)
                     s_ny = find_nearest(S, S[s] + shat)
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
@@ -241,15 +284,19 @@ def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=4
                     for p in range(len_P):
                         def V(pi):
                             V_plus1 = np.sum(
-                                np.exp(-risk_param * (U[s_ny_idx, pi, :, :])) * P_trans_wind[w, :, None] * P_trans_price[p, None, :]
+                                np.exp(-risk_param * (U[s_ny_idx, pi, :, :])) * P_trans_wind[w, :, None] * P_trans_price[p, None, :][0]
                             )
+
                             if math.isnan(V_plus1) == True:
                                 print(-risk_param*U[s_ny_idx, pi, :, :])
                                 print(np.exp(-risk_param*U[s_ny_idx, pi, :, :]))
-                            return R(Q[q], P[p], ehat)/max_reward - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
+
+                            return R(Q[q], P[p]+gamma_1_p, ehat)/1000 - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
                         values = [V(pi) for pi in range(len_Q)]
+
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
+
 
         end_time = time.time()
         print(
@@ -351,7 +398,7 @@ def VIA_risk_CVaR(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, l
         for s in range(len_S):
             for q in range(len_Q):
                 for w in range(len_W):
-                    fW_t = f(W[w])
+                    fW_t = f(W[w])*100
                     shat = s_hat(S[s], Q[q], fW_t)
                     s_ny = find_nearest(S, S[s] + shat)
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
@@ -370,8 +417,9 @@ def VIA_risk_CVaR(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, l
                             beta = frac_level - l_level-1
                             asc_val = np.sort(U[s_ny_idx, pi, :, :], axis = None)
                             V_plus1 = (asc_val[l_level]*beta + np.sum(asc_val[l_level+1:]))/(level*len_W*len_P)
-                            return R(Q[q], P[p], ehat)/100 + discount*V_plus1
+                            return R(Q[q], P[p], ehat) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
+
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
 
@@ -466,19 +514,18 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
 # We approximate practial reward by a regression (OLS) of the discounted reward on the risk parameter.
 # We then choose the best risk parameter value by the program in step 3 in the article
 
-discount = 0.99
-alphas = np.linspace(0.05, 1, 5)[:-1]
+discount = 0.9
+#alphas = np.linspace(0.05, 1, 10)[:-1]
+alphas = [0.1,0.25,0.5,1,1.5,2,2.5,5,10]
 n_sims = 1000
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
-print(np.ndarray.flatten(P_trans_wind[0, :, None]))
-
 tradeoff = 0.1
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_CVaR(S,Q,W,P,discount=discount, eps=1/10, max_iterations=40, level = alpha)
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,discount=discount, eps=10, max_iterations=50, risk_param=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
@@ -490,7 +537,7 @@ for alpha in alphas:
         Q_idx = int(np.where(Q == Q_0)[0][0])
         practical_risk_count = 0
         for t in range(T):
-            fW_t = f(W[w_idx])
+            fW_t = f(W[w_idx])*100
             shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
             q = PI[S_idx, Q_idx, w_idx, p_idx]
             Q_idx = int(np.where(Q == q)[0][0])
@@ -498,8 +545,8 @@ for alpha in alphas:
             S_idx = int(np.where(S == s_ny)[0][0])
             ehat = E(q, S[S_idx], fW_t)
 
-            practical_reward_sum += (discount**t)*R(q,P[p_idx],ehat)/100
-            if S[S_idx] <= 50:
+            practical_reward_sum += (discount**t)*R(q,P[p_idx],ehat)/1000
+            if q>ehat:
                 practical_risk_count += 1
             p_idx = np.random.choice(list(range(len(P))), p = P_trans_price[p_idx, None, :][0])
             w_idx = np.random.choice(list(range(len(W))), p = np.ndarray.flatten(P_trans_wind[0, :, None]))
@@ -516,7 +563,11 @@ risk_practical = np.polyfit(alphas, simulated_practical_risk, 1)
 reward_practical = np.polyfit(alphas, simulated_practical_reward, 1)
 
 plt.scatter(alphas,simulated_practical_risk)
-plt.plot(np.linspace(0,1,100),np.poly1d(risk_practical)(np.linspace(0,1,100)), label = "risk")
+plt.plot(np.linspace(0,alphas[-1],100),np.poly1d(risk_practical)(np.linspace(0,1,100)), label = "risk")
+plt.show()
+
+plt.scatter(alphas,simulated_practical_reward)
+plt.plot(np.linspace(0,alphas[-1],100),np.poly1d(reward_practical)(np.linspace(0,1,100)), label = "risk")
 plt.show()
 
 sol = scipy.optimize.linprog(
