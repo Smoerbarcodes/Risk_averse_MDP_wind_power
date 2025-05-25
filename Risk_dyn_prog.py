@@ -72,7 +72,7 @@ W = np.array([0,1,2,3,4,5,6,7,8,9,10])
 # Action space
 S = np.arange(0,C_S+eta_a,eta_a)
 Q = np.arange(0,tau*C_T+eta_a,eta_a)
-#Q_old = np.arange(-C_T,tau*C_T+eta_a,eta_a)
+#Q = np.arange(-C_T,tau*C_T+eta_a,eta_a)
 
 print(S)
 
@@ -106,11 +106,11 @@ def R(Q_t,P_t,e_t):
     if P_t >= 0 and Q_t <= e_t:
         return Q_t*P_t
     elif P_t >= 0 and Q_t > e_t:
-        return Q_t*P_t - 4*K_n_plus*P_t*(Q_t - e_t)
+        return Q_t*P_t - 2*K_n_plus*P_t*(Q_t - e_t)
     elif P_t < 0 and Q_t <= e_t:
         return Q_t*P_t
     elif P_t < 0 and Q_t > e_t:
-        return Q_t*P_t - 6*K_n_minus*P_t*(Q_t - e_t)
+        return Q_t*P_t - 2*K_n_minus*P_t*(Q_t - e_t)
 
 
 def R_expanded(Q_t,P_t,e_t):
@@ -291,7 +291,7 @@ def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=4
                                 print(-risk_param*U[s_ny_idx, pi, :, :])
                                 print(np.exp(-risk_param*U[s_ny_idx, pi, :, :]))
 
-                            return R(Q[q], P[p]+gamma_1_p, ehat)/1000 - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
+                            return R(Q[q], P[p]+gamma_1_p, ehat)/100 - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
                         values = [V(pi) for pi in range(len_Q)]
 
                         Y[s, q, w, p] = max(values)
@@ -352,7 +352,7 @@ def VIA_risk_CVaR_newutil(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iteratio
                                 )
                                 return eta - 1/(1-level)*V_plus1
                             res = scipy.optimize.minimize(CVAR, 0, bounds = ((min_reward,max_reward),))
-                            return R(Q[q], P[p], ehat)/100 + discount*res.fun
+                            return R(Q[q], P[p], ehat)/100   + discount*res.fun
                         values = [V(pi) for pi in range(len_Q)]
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
@@ -413,16 +413,14 @@ def VIA_risk_CVaR(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, l
                             #    return eta - 1/(1-level)*V_plus1
                             #res = scipy.optimize.minimize(CVAR, 0, bounds = ((min_reward,max_reward),))
                             frac_level = level*len_W*len_P
-                            l_level = int(math.floor(frac_level)+1)
-                            beta = frac_level - l_level-1
+                            l_level = int(math.ceil(frac_level)-1)
+                            beta = frac_level - l_level
                             asc_val = np.sort(U[s_ny_idx, pi, :, :], axis = None)
-                            V_plus1 = (asc_val[l_level]*beta + np.sum(asc_val[l_level+1:]))/(level*len_W*len_P)
+                            V_plus1 = (asc_val[l_level]*beta + np.sum(asc_val[:l_level-1]))/(level*len_W*len_P)
                             return R(Q[q], P[p], ehat) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
-
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
-
         end_time = time.time()
         print(
             t,
@@ -464,22 +462,34 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
         for s in range(len_S):
             for q in range(len_Q):
                 for w in range(len_W):
-                    fW_t = f(W[w])
+                    fW_t = f(W[w])*100
                     shat = s_hat(S[s], Q[q], fW_t)
                     s_ny = find_nearest(S, S[s] + shat)
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
                     ehat = E(Q[q], S[s], fW_t)
                     for p in range(len_P):
                         def V(pi):
-                            frac_level = level*len_W*len_P
-                            l_level = int(math.floor(frac_level)+1)
-                            beta = frac_level - l_level-1
-                            asc_val = np.sort(U[s_ny_idx, pi, :, :], axis = None)
-                            V_plus1 = (asc_val[l_level]*beta + np.sum(asc_val[l_level+1:]))/(level*len_W*len_P)
-                            return R(Q[q], P[p], ehat)/100 + discount*V_plus1
+                            frac_level = level * len_W * len_P
+                            l_level = int(math.ceil(frac_level) - 1)
+                            beta = frac_level - l_level
+                            asc_val = np.sort(U[s_ny_idx, pi, :, :], axis=None)
+                            quantile = asc_val[l_level]
+                            weights = np.where(U[s_ny_idx, pi, :, :]<=quantile, 1/level, 0)
+                            if np.max(U[s_ny_idx, pi, :, :])-np.min(U[s_ny_idx, pi, :, :]) < 1/100:
+                                weights = np.zeros_like(U[s_ny_idx, pi, :, :])+1
+                            #if t > 1:
+                            #    print(t, quantile, level)
+                            #    print(pi,U[s_ny_idx, pi, :, :])
+                            #    print(pi,weights)
+                            V_plus1 = np.sum(np.multiply(U[s_ny_idx, pi, :, :],weights) * P_trans_wind[w, :, None] * P_trans_price[p,None, :])
+                            return R(Q[q], P[p], ehat)+abs(min_reward) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
+                        #print(t,np.argmax(values))
                         Y[s, q, w, p] = max(values)
-                        PI[s, q, w, p] = Q[np.argmax(values)]
+                        if t == 1:
+                            PI[s, q, w, p] = Q[np.random.choice(len_Q)]
+                        else:
+                            PI[s, q, w, p] = Q[np.argmax(values)]
 
         end_time = time.time()
         print(
@@ -515,17 +525,18 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
 # We then choose the best risk parameter value by the program in step 3 in the article
 
 discount = 0.9
-#alphas = np.linspace(0.05, 1, 10)[:-1]
-alphas = [0.1,0.25,0.5,1,1.5,2,2.5,5,10]
-n_sims = 1000
+alphas = np.linspace(0.2, 1, 5)[:-1]
+#alphas = [0.1,0.25,0.5,1,1.5,2,2.5,5,10]
+n_sims = 10000
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
-tradeoff = 0.1
+
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,discount=discount, eps=1/10, max_iterations=100)
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,discount=discount, eps=10, max_iterations=50, risk_param=alpha)
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
@@ -570,12 +581,17 @@ plt.scatter(alphas,simulated_practical_reward)
 plt.plot(np.linspace(0,alphas[-1],100),np.poly1d(reward_practical)(np.linspace(0,1,100)), label = "risk")
 plt.show()
 
-sol = scipy.optimize.linprog(
+
+tradeoffs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+
+for tradeoff in tradeoffs:
+
+    sol = scipy.optimize.linprog(
     c=-reward_practical,  # Maximize reward_practical (negated for linprog's minimization)
     A_ub=[risk_practical],  # Linear constraint on risk_practical
     b_ub=[tradeoff],  # Replace `some_threshold` with the desired upper bound for risk
     bounds=(0.01, 0.99)  # No bounds on the decision variables
-)
+    )
 
-alpha_hat = sol.x[0]
-print("Optimal risk parameter:", alpha_hat)
+    alpha_hat = sol.x[0]
+    print("tradeoff", tradeoff,"Optimal risk parameter:", alpha_hat)
