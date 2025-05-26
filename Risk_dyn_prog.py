@@ -1,5 +1,4 @@
 import math
-
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
@@ -517,23 +516,55 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
 
 # ---------------------EVALUATION---------------------------------
 
-#PI, U, M_ns, m_ns = VIA_risk_CVaR_newutil(S,Q,W,P,eps=1/10, max_iterations=40, level = 0.8)
+n_sims = 10000
+discount = 0.9
+
+# Risk-neutral evaluation
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,eps=1/10, max_iterations=40)
+
+neutral_practical_reward_sum = 0
+neutral_practical_risk = 0
+for _ in range(n_sims):
+    p_idx = 0
+    w_idx = 2
+    S_idx = int(np.where(S == S_0)[0][0])
+    Q_idx = int(np.where(Q == Q_0)[0][0])
+    neutral_practical_risk_count = 0
+    for t in range(T):
+        fW_t = f(W[w_idx]) * 100
+        ehat = E(Q[Q_idx], S[S_idx], fW_t)
+        if Q[Q_idx] > ehat:
+            neutral_practical_risk_count += 1
+        neutral_practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
+
+        # Transition in endogenous variables
+        shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
+        q = PI[S_idx, Q_idx, w_idx, p_idx]
+        Q_idx = int(np.where(Q == q)[0][0])
+        s_ny = find_nearest(S, S[S_idx] + shat)
+        S_idx = int(np.where(S == s_ny)[0][0])
+
+        # Transition in exogenous variables
+        p_idx = np.random.choice(list(range(len(P))), p=P_trans_price[p_idx, None, :][0])
+        w_idx = np.random.choice(list(range(len(W))), p=np.ndarray.flatten(P_trans_wind[w_idx, :, None]))
+
+    neutral_practical_risk += neutral_practical_risk_count/T
+
+RN_risk = neutral_practical_risk/n_sims
+RN_reward = neutral_practical_reward_sum/n_sims
 
 # For a chosen risk-preference level, we now run the algorithm for different values of the risk parameter.
 # Next, we simulate practical reward and risk for discrete outcomes, by simulating the process 100 times, and calculating the discounted reward and practical risk.
 # We approximate practial reward by a regression (OLS) of the discounted reward on the risk parameter.
 # We then choose the best risk parameter value by the program in step 3 in the article
 
-discount = 0.9
+
 alphas = np.linspace(0.2, 1, 5)[:-1]
 #alphas = [0.1,0.25,0.5,1,1.5,2,2.5,5,10]
-n_sims = 10000
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
-
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,discount=discount, eps=1/10, max_iterations=100)
 
 for alpha in alphas:
     PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level=alpha)
@@ -549,18 +580,21 @@ for alpha in alphas:
         practical_risk_count = 0
         for t in range(T):
             fW_t = f(W[w_idx])*100
+            ehat = E(Q[Q_idx], S[S_idx], fW_t)
+            if Q[Q_idx] > ehat:
+                practical_risk_count += 1
+            practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
+
+            # Transition in endogenous variables
             shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
             q = PI[S_idx, Q_idx, w_idx, p_idx]
             Q_idx = int(np.where(Q == q)[0][0])
             s_ny = find_nearest(S, S[S_idx] + shat)
             S_idx = int(np.where(S == s_ny)[0][0])
-            ehat = E(q, S[S_idx], fW_t)
 
-            practical_reward_sum += (discount**t)*R(q,P[p_idx],ehat)/1000
-            if q>ehat:
-                practical_risk_count += 1
+            # Transition in exogenous variables
             p_idx = np.random.choice(list(range(len(P))), p = P_trans_price[p_idx, None, :][0])
-            w_idx = np.random.choice(list(range(len(W))), p = np.ndarray.flatten(P_trans_wind[0, :, None]))
+            w_idx = np.random.choice(list(range(len(W))), p = np.ndarray.flatten(P_trans_wind[w_idx, :, None]))
 
         practical_risk += practical_risk_count/T
 
@@ -583,6 +617,9 @@ plt.show()
 
 
 tradeoffs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+optimal_practical_reward = []
+optimal_practical_risk = []
+optimal_params = []
 
 for tradeoff in tradeoffs:
 
@@ -594,4 +631,38 @@ for tradeoff in tradeoffs:
     )
 
     alpha_hat = sol.x[0]
-    print("tradeoff", tradeoff,"Optimal risk parameter:", alpha_hat)
+    optimal_params.append(alpha_hat)
+
+    # Now we can evaluate the risk-neutral policy with the chosen risk parameter
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level=alpha_hat)
+    optimal_practical_reward_sum = 0
+    optimal_practical_risk = 0
+    for _ in range(n_sims):
+        p_idx = 0
+        w_idx = 2
+        S_idx = int(np.where(S == S_0)[0][0])
+        Q_idx = int(np.where(Q == Q_0)[0][0])
+        optimal_practical_risk_count = 0
+        for t in range(T):
+            fW_t = f(W[w_idx]) * 100
+            ehat = E(Q[Q_idx], S[S_idx], fW_t)
+            if Q[Q_idx] > ehat:
+                optimal_practical_risk_count += 1
+            optimal_practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
+
+            # Transition in endogenous variables
+            shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
+            q = PI[S_idx, Q_idx, w_idx, p_idx]
+            Q_idx = int(np.where(Q == q)[0][0])
+            s_ny = find_nearest(S, S[S_idx] + shat)
+            S_idx = int(np.where(S == s_ny)[0][0])
+
+            # Transition in exogenous variables
+            p_idx = np.random.choice(list(range(len(P))), p=P_trans_price[p_idx, None, :][0])
+            w_idx = np.random.choice(list(range(len(W))), p=np.ndarray.flatten(P_trans_wind[w_idx, :, None]))
+
+        optimal_practical_risk += optimal_practical_risk_count/T
+
+    print("tradeoff", tradeoff, "Optimal risk parameter:", alpha_hat, "practical risk of RN", (optimal_practical_risk/n_sims)/RN_risk, "practical reward", (optimal_practical_reward_sum/n_sims)/RN_reward)
+    optimal_practical_risk.append(optimal_practical_risk/n_sims)
+    optimal_practical_reward.append(optimal_practical_reward_sum/n_sims)
