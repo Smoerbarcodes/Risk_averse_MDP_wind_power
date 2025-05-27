@@ -51,16 +51,18 @@ omega_2 = -32.431
 phi = 0.931
 sigma_w = 1.558
 P_trans_wind = np.array([[0.626,0.206,0.114,0.042,0.010,0.002,0,0,0,0,0],
-                         [0.391,0.252,0.201,0.107,0.039,0.009,0.002,0,0,0,0],
-                         [0.191,0.217,0.251,0.195,0.101,0.035,0.008,0.001,0,0,0],
+                         [0.390,0.252,0.201,0.107,0.039,0.009,0.002,0,0,0,0],
+                         [0.192,0.217,0.251,0.195,0.101,0.035,0.008,0.001,0,0,0],
                          [0.072,0.133,0.222,0.250,0.188,0.095,0.032,0.007,0.001,0,0],
                          [0.019,0.057,0.139,0.227,0.248,0.182,0.090,0.030,0.007,0.001,0],
-                         [0.004,0.018,0.062,0.146,0.231,0.246,0.176,0.084,0.027,0.006,0.001],
-                         [0.001,0.004,0.019,0.067,0.153,0.235,0.243,0.169,0.079,0.025,0.006],
-                         [0,0.001,0.004,0.021,0.071,0.159,0.239,0.241,0.162,0.075,0.025],
-                         [0,0,0.001,0.005,0.024,0.076,0.166,0.243,0.241,0.164,0.081],
-                         [0,0,0,0.001,0.006,0.026,0.083,0.177,0.257,0.260,0.191],
-                         [0,0,0,0,0.001,0.007,0.031,0.097,0.210,0.317,0.338]])
+                         [0.004,0.018,0.062,0.146,0.231,0.245,0.176,0.084,0.027,0.006,0.001],
+                         [0.001,0.004,0.019,0.067,0.153,0.234,0.243,0.169,0.079,0.025,0.006],
+                         [0,0.001,0.004,0.021,0.071,0.159,0.240,0.242,0.162,0.075,0.025],
+                         [0,0,0.001,0.005,0.024,0.076,0.166,0.242,0.241,0.164,0.081],
+                         [0,0,0,0.001,0.006,0.026,0.083,0.177,0.256,0.260,0.191],
+                         [0,0,0,0,0.001,0.007,0.031,0.097,0.210,0.317,0.337]])
+
+print(np.sum(P_trans_wind, axis=1)) # Check that the rows sum to 1
 
 # State spaces
 P = np.array([-52.93,-26.47,0,26.47,52.93])
@@ -337,24 +339,37 @@ def VIA_risk_CVaR_newutil(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iteratio
         for s in range(len_S):
             for q in range(len_Q):
                 for w in range(len_W):
-                    fW_t = f(W[w])
+                    fW_t = f(W[w])*100
                     shat = s_hat(S[s], Q[q], fW_t)
                     s_ny = find_nearest(S, S[s] + shat)
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
                     ehat = E(Q[q], S[s], fW_t)
                     for p in range(len_P):
-                        def V(pi):
-                            def CVAR(eta):
-                                V_plus1 = np.sum(
-                                    np.maximum(U[s_ny_idx, pi, :, :]-eta,0) * P_trans_wind[w, :,
+                        for pi in range(len_Q):
+                            best_val = float('-inf')
+                            best_action = None
+                            def V(pi):
+                                def CVAR(eta):
+
+                                    V_plus1 = np.sum(
+                                        np.maximum(U[s_ny_idx, pi, :, :]-eta,0) * P_trans_wind[w, :,
                                                                                     None] * P_trans_price[p, None, :]
-                                )
-                                return eta - 1/(1-level)*V_plus1
-                            res = scipy.optimize.minimize(CVAR, 0, bounds = ((min_reward,max_reward),))
-                            return R(Q[q], P[p], ehat)/100   + discount*res.fun
-                        values = [V(pi) for pi in range(len_Q)]
-                        Y[s, q, w, p] = max(values)
-                        PI[s, q, w, p] = Q[np.argmax(values)]
+                                    )
+                                    return eta - 1.0/(1-level)*V_plus1
+                                res = scipy.optimize.minimize(CVAR, 0,bounds=(min_reward,max_reward))
+                                    #n = len_W*len_P
+
+                                    #c = np.zeros(n + 1)
+                                    #c[0] = 1.0  # eta coefficient
+                                    #c[1:] =  / (1 - alpha)  # xi_i coefficients
+
+
+                                return R(Q[q], P[p], ehat)   + discount*res.fun
+                            if V(pi) > best_val:
+                                best_val = V(pi)
+                                best_action = pi
+                        Y[s, q, w, p] = best_val
+                        PI[s, q, w, p] = best_action
 
         end_time = time.time()
         print(
@@ -516,11 +531,11 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
 
 # ---------------------EVALUATION---------------------------------
 
-n_sims = 10000
+n_sims = 1000
 discount = 0.9
 
 # Risk-neutral evaluation
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,eps=1/10, max_iterations=40)
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,eps=1/10, max_iterations=25)
 
 neutral_practical_reward_sum = 0
 neutral_practical_risk = 0
@@ -560,14 +575,14 @@ RN_reward = neutral_practical_reward_sum/n_sims
 
 
 alphas = np.linspace(0.2, 1, 5)[:-1]
-#alphas = [0.1,0.25,0.5,1,1.5,2,2.5,5,10]
+#alphas = [0.1,0.25,0.5,1,1.5,2]
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level=alpha)
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=20, level=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
@@ -604,8 +619,8 @@ for alpha in alphas:
 print("risk", simulated_practical_risk)
 print("reward", simulated_practical_reward)
 
-risk_practical = np.polyfit(alphas, simulated_practical_risk, 1)
-reward_practical = np.polyfit(alphas, simulated_practical_reward, 1)
+risk_practical = np.polyfit(alphas, simulated_practical_risk, deg = 2)
+reward_practical = np.polyfit(alphas, simulated_practical_reward, deg = 2)
 
 plt.scatter(alphas,simulated_practical_risk)
 plt.plot(np.linspace(0,alphas[-1],100),np.poly1d(risk_practical)(np.linspace(0,1,100)), label = "risk")
@@ -623,20 +638,32 @@ optimal_params = []
 
 for tradeoff in tradeoffs:
 
-    sol = scipy.optimize.linprog(
-    c=-reward_practical,  # Maximize reward_practical (negated for linprog's minimization)
-    A_ub=[risk_practical],  # Linear constraint on risk_practical
-    b_ub=[tradeoff],  # Replace `some_threshold` with the desired upper bound for risk
-    bounds=(0.01, 0.99)  # No bounds on the decision variables
-    )
+    def objective(alpha):
+        return -np.poly1d(reward_practical)(alpha)
+
+    def constraint(alpha):
+        return tradeoff - np.poly1d(risk_practical)(alpha)
+
+
+    bounds = [(0.001, alphas[-1])]  # Bounds for alpha
+    constraints = {'type': 'ineq', 'fun': constraint}
+
+    sol = scipy.optimize.minimize(objective, x0=alphas[0], bounds=bounds, constraints=constraints)
+
+    #sol = scipy.optimize.linprog(
+    #c=-reward_practical,  # Maximize reward_practical (negated for linprog's minimization)
+    #A_ub=[risk_practical],  # Linear constraint on risk_practical
+    #b_ub=[tradeoff],  # Replace `some_threshold` with the desired upper bound for risk
+    #bounds=(0.001, alphas[-1])  # No bounds on the decision variables
+    #)
 
     alpha_hat = sol.x[0]
     optimal_params.append(alpha_hat)
 
     # Now we can evaluate the risk-neutral policy with the chosen risk parameter
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level=alpha_hat)
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level = alpha_hat)
     optimal_practical_reward_sum = 0
-    optimal_practical_risk = 0
+    optimal_practical_risk_sim = 0
     for _ in range(n_sims):
         p_idx = 0
         w_idx = 2
@@ -661,8 +688,12 @@ for tradeoff in tradeoffs:
             p_idx = np.random.choice(list(range(len(P))), p=P_trans_price[p_idx, None, :][0])
             w_idx = np.random.choice(list(range(len(W))), p=np.ndarray.flatten(P_trans_wind[w_idx, :, None]))
 
-        optimal_practical_risk += optimal_practical_risk_count/T
+        optimal_practical_risk_sim += optimal_practical_risk_count/T
 
-    print("tradeoff", tradeoff, "Optimal risk parameter:", alpha_hat, "practical risk of RN", (optimal_practical_risk/n_sims)/RN_risk, "practical reward", (optimal_practical_reward_sum/n_sims)/RN_reward)
-    optimal_practical_risk.append(optimal_practical_risk/n_sims)
+    optimal_practical_risk.append(optimal_practical_risk_sim/n_sims)
     optimal_practical_reward.append(optimal_practical_reward_sum/n_sims)
+
+print("tradeoffs", tradeoffs)
+print("Optimal risk param", optimal_params)
+print("practical risk of RN", list(map(lambda x: x/RN_risk, optimal_practical_risk)))
+print("practical reward of RN", list(map(lambda x: x/RN_reward, optimal_practical_reward)))
