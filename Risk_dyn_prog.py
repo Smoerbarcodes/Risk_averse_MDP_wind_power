@@ -3,6 +3,7 @@ import numpy as np
 import scipy
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
+from scipy.optimize import curve_fit
 #from matplotlib import cm
 #from matplotlib.ticker import LinearLocator
 #import random
@@ -18,11 +19,13 @@ def find_nearest(array,value):
 
 #------------------------------------------------------
 
+scal = 100
+
 # Constants for Markov Model
 K_p_plus = 0.9
 K_n_minus = 0.9
 K_p_minus = 1.1
-K_n_plus = 0.9
+K_n_plus = 1.1
 C_S = 200
 C_C = 50
 C_D = 50
@@ -108,34 +111,69 @@ def R(Q_t,P_t,e_t):
     if P_t >= 0 and Q_t <= e_t:
         return Q_t*P_t
     elif P_t >= 0 and Q_t > e_t:
-        return Q_t*P_t - 2*K_n_plus*P_t*(Q_t - e_t)
+        return Q_t*P_t - K_n_plus*P_t*(Q_t - e_t)
     elif P_t < 0 and Q_t <= e_t:
         return Q_t*P_t
     elif P_t < 0 and Q_t > e_t:
-        return Q_t*P_t - 2*K_n_minus*P_t*(Q_t - e_t)
+        return Q_t*P_t - K_n_minus*P_t*(Q_t - e_t)
 
+def R_scaled(Q_t,P_t,e_t):
+    if P_t >= 0 and Q_t <= e_t:
+        return Q_t*P_t/scal
+    elif P_t >= 0 and Q_t > e_t:
+        return (Q_t*P_t - K_n_plus*P_t*(Q_t - e_t))/scal
+    elif P_t < 0 and Q_t <= e_t:
+        return (Q_t*P_t)/scal
+    elif P_t < 0 and Q_t > e_t:
+        return (Q_t*P_t - K_n_minus*P_t*(Q_t - e_t))/scal
 
-def R_expanded(Q_t,P_t,e_t):
-    if P_t >= 0 and Q_t < e_t:
-        return Q_t*P_t+K_p_plus*P_t*(e_t-Q_t)
-    elif P_t >= 0 and Q_t >= e_t:
-        if 80 >= Q_t - e_t > 40:
-            return Q_t * P_t - 1 * K_n_plus * P_t * (Q_t - e_t)
-        if 120 >= Q_t-e_t > 80:
-            return Q_t*P_t-1*K_n_plus*P_t*(Q_t - e_t)
+def R_risky(Q_t,P_t,e_t):
+    if P_t >= 0 and Q_t <= e_t:
+        return Q_t*P_t
+    elif P_t >= 0 and Q_t > e_t:
+        if 40 >= Q_t - e_t > 0:
+            return Q_t * P_t - K_n_plus * P_t * (Q_t - e_t)
+        elif 80 >= Q_t-e_t > 40:
+            return Q_t*P_t-2*K_n_plus*P_t*(Q_t - e_t)
+        elif 120 >= Q_t-e_t > 80:
+            return Q_t*P_t - 4*K_n_plus*P_t*(Q_t - e_t)
         elif Q_t-e_t > 120:
-            return Q_t*P_t-1*K_n_plus*P_t*(Q_t - e_t)
-        else:
-            return Q_t*P_t-K_n_plus*P_t*(Q_t - e_t)
-    elif P_t < 0 and Q_t < e_t:
-        return Q_t*P_t+K_p_minus*P_t*(e_t - Q_t)
-    elif P_t < 0 and Q_t >= e_t:
-        if 125 >= Q_t-e_t > 100:
-            return Q_t*P_t-1*K_n_minus*P_t*(Q_t - e_t)
-        elif Q_t-e_t > 125:
-            return Q_t*P_t-1*K_n_minus*P_t*(Q_t - e_t)
-        else:
-            return Q_t*P_t-K_n_minus*P_t*(Q_t - e_t)
+            return Q_t*P_t - 8*K_n_plus*P_t*(Q_t - e_t)
+    elif P_t < 0 and Q_t <= e_t:
+        return Q_t*P_t
+    elif P_t < 0 and Q_t > e_t:
+        if 40 >= Q_t - e_t > 0:
+            return Q_t*P_t - K_n_minus*P_t*(Q_t - e_t)
+        elif 80 >= Q_t-e_t > 40:
+            return Q_t*P_t-2*K_n_minus*P_t*(Q_t - e_t)
+        elif 120 >= Q_t-e_t > 80:
+            return Q_t*P_t - 4*K_n_minus*P_t*(Q_t - e_t)
+        elif Q_t-e_t > 120:
+            return Q_t*P_t - 8*K_n_minus*P_t*(Q_t - e_t)
+
+def R_risky_scaled(Q_t,P_t,e_t):
+    if P_t >= 0 and Q_t <= e_t:
+        return Q_t*P_t/scal
+    elif P_t >= 0 and Q_t > e_t:
+        if 40 >= Q_t - e_t > 0:
+            return (Q_t * P_t - K_n_plus * P_t * (Q_t - e_t))/scal
+        elif 80 >= Q_t-e_t > 40:
+            return (Q_t*P_t-2*K_n_plus*P_t*(Q_t - e_t))/scal
+        elif 120 >= Q_t-e_t > 80:
+            return (Q_t*P_t - 4*K_n_plus*P_t*(Q_t - e_t))/scal
+        elif Q_t-e_t > 120:
+            return (Q_t*P_t - 8*K_n_plus*P_t*(Q_t - e_t))/scal
+    elif P_t < 0 and Q_t <= e_t:
+        return Q_t*P_t/scal
+    elif P_t < 0 and Q_t > e_t:
+        if 40 >= Q_t - e_t > 0:
+            return (Q_t*P_t - K_n_minus*P_t*(Q_t - e_t))/scal
+        elif 80 >= Q_t-e_t > 40:
+            return (Q_t*P_t-2*K_n_minus*P_t*(Q_t - e_t))/scal
+        elif 120 >= Q_t-e_t > 80:
+            return (Q_t*P_t - 4*K_n_minus*P_t*(Q_t - e_t))/scal
+        elif Q_t-e_t > 120:
+            return (Q_t*P_t - 8*K_n_minus*P_t*(Q_t - e_t))/scal
 
 
 def R_OG(Q_t,P_t,e_t):
@@ -201,7 +239,7 @@ xi_0 = 5
 rho_0 = 0
 j_0 = 0
 
-def VIA_risk_neutral(S, Q, W, P, discount = 0.99, eps=1/10, max_iterations=40):
+def VIA_risk_neutral(S, Q, W, P, R, discount = 0.99, eps=1/10, max_iterations=40):
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
@@ -256,7 +294,7 @@ def VIA_risk_neutral(S, Q, W, P, discount = 0.99, eps=1/10, max_iterations=40):
         M_ns.append(np.max(Y - U))
         m_ns.append(np.min(Y - U))
 
-        if np.max(Y - U) - np.min(Y - U) < eps * np.min(Y - U):
+        if np.max(np.abs(Y - U)) <= eps * (1 - discount) / (2 * discount):
             print("Converged")
             break
         if t > max_iterations:
@@ -274,7 +312,7 @@ def VIA_risk_neutral(S, Q, W, P, discount = 0.99, eps=1/10, max_iterations=40):
 #----------------------------------------------------------------
 # Risk preferences
 
-def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, risk_param = 0.8):
+def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations=20, risk_param = 0.8):
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
@@ -302,8 +340,8 @@ def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=4
                             probs = (P_trans_wind[w, :, None] * P_trans_price[p, None, :]).flatten()
 
                             # entropic risk mapping
-                            risk_value = -1.0 / risk_param * logsumexp(
-                                -risk_param * V_next, b=probs
+                            risk_value = 1.0 / -risk_param * logsumexp(
+                                risk_param * V_next, b=probs
                             )
                             val = R(Q[q], P[p] + gamma_1_p, ehat) + discount * risk_value
                             values.append(val)
@@ -335,7 +373,7 @@ def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=4
         M_ns.append(np.max(Y - U))
         m_ns.append(np.min(Y - U))
 
-        if np.max(Y - U) - np.min(Y - U) < eps * np.min(Y - U):
+        if np.max(np.abs(Y-U)) <= eps*(1-discount)/(2*discount):
             print("Converged")
             break
         if t > max_iterations:
@@ -498,7 +536,7 @@ def cvar_from_sorted(values, probs, alpha):
             break
     return cvar_sum / tail_mass
 
-def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, level = 0.8):
+def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=40, level = 0.8):
     assert 0 < level < 1, "level must be between 0 and 1"
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
@@ -573,11 +611,11 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
 
 # ---------------------EVALUATION---------------------------------
 
-n_sims = 1000
+n_sims = 10000
 discount = 0.9
 
 # Risk-neutral evaluation
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,eps=1/10, max_iterations=25)
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R,eps=2, max_iterations=100)
 
 neutral_practical_reward_sum = 0
 neutral_practical_risk = 0
@@ -617,14 +655,14 @@ RN_reward = neutral_practical_reward_sum/n_sims
 
 
 #alphas = np.linspace(0.2, 1, 5)[:-1]
-alphas = [0.1,0.25,0.5,1,1.5,2]
+alphas = [0.05,0.01,0.02,0.25,0.5,0.75,1]
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,discount=discount, eps=1/10, max_iterations=20, risk_param=alpha)
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled,discount=discount, eps=2, max_iterations=10, risk_param=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
@@ -661,15 +699,41 @@ for alpha in alphas:
 print("risk", simulated_practical_risk)
 print("reward", simulated_practical_reward)
 
-risk_practical = np.polyfit(alphas, simulated_practical_risk, deg = 2)
-reward_practical = np.polyfit(alphas, simulated_practical_reward, deg = 2)
+#risk_practical = np.polyfit(alphas, simulated_practical_risk, deg = 2)
+#reward_practical = np.polyfit(alphas, simulated_practical_reward, deg = 2)
 
-plt.scatter(alphas,simulated_practical_risk)
-plt.plot(np.linspace(0,alphas[-1],100),np.poly1d(risk_practical)(np.linspace(0,1,100)), label = "risk")
+def exp_decay(alpha, a, b, c):
+    return a * np.exp(-b * alpha) + c
+
+risk_practical, _ = curve_fit(exp_decay, alphas, simulated_practical_risk, p0=[1.0, 10.0, 0.0])
+reward_practical,_ = curve_fit(exp_decay, alphas, simulated_practical_reward, p0=[1.0, 10.0, 0.0])
+
+alpha_range = np.linspace(alphas[0], alphas[-1], 100)
+fit_risk = exp_decay(alpha_range, *risk_practical)
+fit_reward = exp_decay(alpha_range, *reward_practical)
+
+plt.plot(alphas,simulated_practical_risk, 'o', label='Simulated Data')
+plt.plot(alpha_range,fit_risk, label = "fitted risk")
+plt.xlabel("Risk-parameter value")
+plt.ylabel("Practical risk")
+plt.title("Practical risk vs risk parameter value")
+plt.legend()
 plt.show()
 
 plt.scatter(alphas,simulated_practical_reward)
-plt.plot(np.linspace(0,alphas[-1],100),np.poly1d(reward_practical)(np.linspace(0,1,100)), label = "risk")
+plt.plot(alpha_range,fit_reward, label = "fitted reward")
+plt.xlabel("Risk-parameter value")
+plt.ylabel("Practical reward")
+plt.title("Practical reward vs risk parameter value")
+plt.legend()
+plt.show()
+
+plt.plot(simulated_practical_risk, simulated_practical_reward, 'o-')
+for i, param in enumerate(simulated_practical_risk):
+    plt.text(simulated_practical_risk[i], simulated_practical_reward[i], f"{param:.2f}", fontsize=9)
+plt.xlabel("Practical Risk (P(Q > e))")
+plt.ylabel("Expected Reward")
+plt.title("Risk-Reward Tradeoff of Policies")
 plt.show()
 
 
@@ -681,16 +745,17 @@ optimal_params = []
 for tradeoff in tradeoffs:
 
     def objective(alpha):
-        return -np.poly1d(reward_practical)(alpha)
+        return -exp_decay(alpha, *reward_practical)  # We want to maximize reward_practical, so we minimize its negative
 
     def constraint(alpha):
-        return tradeoff - np.poly1d(risk_practical)(alpha)
-
+        return tradeoff - exp_decay(alpha, *risk_practical)
 
     bounds = [(0.001, alphas[-1])]  # Bounds for alpha
     constraints = {'type': 'ineq', 'fun': constraint}
 
-    sol = scipy.optimize.minimize(objective, x0=alphas[0], bounds=bounds, constraints=constraints)
+    sol = scipy.optimize.minimize_scalar(
+        objective, bounds=(0.001, alphas[-1]), method='bounded', options={'xatol': 1e-5}
+    )
 
     #sol = scipy.optimize.linprog(
     #c=-reward_practical,  # Maximize reward_practical (negated for linprog's minimization)
@@ -699,11 +764,11 @@ for tradeoff in tradeoffs:
     #bounds=(0.001, alphas[-1])  # No bounds on the decision variables
     #)
 
-    alpha_hat = sol.x[0]
+    alpha_hat = sol.x
     optimal_params.append(alpha_hat)
 
     # Now we can evaluate the risk-neutral policy with the chosen risk parameter
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=25, level = alpha_hat)
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled,discount=discount, eps=1/10, max_iterations=25, risk_param = alpha_hat)
     optimal_practical_reward_sum = 0
     optimal_practical_risk_sim = 0
     for _ in range(n_sims):
