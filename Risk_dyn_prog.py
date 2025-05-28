@@ -343,7 +343,7 @@ def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations
                             risk_value = 1.0 / -risk_param * logsumexp(
                                 risk_param * V_next, b=probs
                             )
-                            val = R(Q[q], P[p] + gamma_1_p, ehat) + discount * risk_value
+                            val = R(Q[q], P[p] + gamma_1_p, ehat) - discount * risk_value
                             values.append(val)
                         #def V(pi):
                         #    V_plus1 = np.sum(
@@ -611,7 +611,7 @@ def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=4
 
 # ---------------------EVALUATION---------------------------------
 
-n_sims = 10000
+n_sims = 1000
 discount = 0.9
 
 # Risk-neutral evaluation
