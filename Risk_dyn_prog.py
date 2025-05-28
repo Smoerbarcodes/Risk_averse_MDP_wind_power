@@ -2,6 +2,7 @@ import math
 import numpy as np
 import scipy
 import matplotlib.pyplot as plt
+from scipy.special import logsumexp
 #from matplotlib import cm
 #from matplotlib.ticker import LinearLocator
 #import random
@@ -221,12 +222,24 @@ def VIA_risk_neutral(S, Q, W, P, discount = 0.99, eps=1/10, max_iterations=40):
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
                     ehat = E(Q[q], S[s], fW_t)
                     for p in range(len_P):
-                        def V(pi):
-                            V_plus1 = np.sum(
-                                U[s_ny_idx, pi, :, :] * P_trans_wind[w, :, None] * P_trans_price[p,None, :]
-                            )
-                            return R(Q[q], P[p]+gamma_1_p, ehat) + discount*V_plus1
-                        values = [V(pi) for pi in range(len_Q)]
+                        for pi in range(len(Q)):
+                            V_next = np.zeros(len_Q)
+                            for pi in range(len_Q):
+                                V_plus1 = np.sum(
+                                    U[s_ny_idx, pi, :, :] * P_trans_wind[w, :, None] * P_trans_price[p, None, :]
+                                )
+                                V_next[pi] = V_plus1
+
+                            values = np.array([
+                                R(Q[q], P[p] + gamma_1_p, ehat) + discount * V_next[pi]
+                                for pi in range(len_Q)
+                            ])
+                        #def V(pi):
+                        #    V_plus1 = np.sum(
+                        #        U[s_ny_idx, pi, :, :] * P_trans_wind[w, :, None] * P_trans_price[p,None, :]
+                        #    )
+                        #    return R(Q[q], P[p]+gamma_1_p, ehat) + discount*V_plus1
+                        #values = [V(pi) for pi in range(len_Q)]
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
 
@@ -283,17 +296,27 @@ def VIA_risk_entropic(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=4
                     s_ny_idx = int(np.where(S == s_ny)[0][0])
                     ehat = E(Q[q], S[s], fW_t)
                     for p in range(len_P):
-                        def V(pi):
-                            V_plus1 = np.sum(
-                                np.exp(-risk_param * (U[s_ny_idx, pi, :, :])) * P_trans_wind[w, :, None] * P_trans_price[p, None, :][0]
+                        values = []
+                        for pi in range(len_Q):
+                            V_next = U[s_ny_idx, pi, :, :].flatten()
+                            probs = (P_trans_wind[w, :, None] * P_trans_price[p, None, :]).flatten()
+
+                            # entropic risk mapping
+                            risk_value = -1.0 / risk_param * logsumexp(
+                                -risk_param * V_next, b=probs
                             )
-
-                            if math.isnan(V_plus1) == True:
-                                print(-risk_param*U[s_ny_idx, pi, :, :])
-                                print(np.exp(-risk_param*U[s_ny_idx, pi, :, :]))
-
-                            return R(Q[q], P[p]+gamma_1_p, ehat)/100 - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
-                        values = [V(pi) for pi in range(len_Q)]
+                            val = R(Q[q], P[p] + gamma_1_p, ehat) + discount * risk_value
+                            values.append(val)
+                        #def V(pi):
+                        #    V_plus1 = np.sum(
+                        #        np.exp(-risk_param * (U[s_ny_idx, pi, :, :])) * P_trans_wind[w, :, None] * P_trans_price[p, None, :][0]
+                        #    )
+                        #    V_plus1 = np.sum(
+                        #    if math.isnan(V_plus1) == True:
+                        #        print(-risk_param*U[s_ny_idx, pi, :, :])
+                        #        print(np.exp(-risk_param*U[s_ny_idx, pi, :, :]))
+                        #
+                        #    return R(Q[q], P[p]+gamma_1_p, ehat)/100 - discount/risk_param*np.log(V_plus1) #deler med 1000 for at undgå overflow
 
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
@@ -459,6 +482,22 @@ def VIA_risk_CVaR(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, l
 
     return PI, U, M_ns, m_ns
 
+def cvar_from_sorted(values, probs, alpha):
+    sorted_pairs = sorted(zip(values, probs), key=lambda x: x[0])
+    cumulative = 0
+    cvar_sum = 0
+    tail_mass = 1 - alpha
+    for z, p in sorted_pairs:
+        if cumulative + p <= tail_mass:
+            cvar_sum += z * p
+            cumulative += p
+        else:
+            remaining = tail_mass - cumulative
+            if remaining > 0:
+                cvar_sum += z * remaining
+            break
+    return cvar_sum / tail_mass
+
 def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=40, level = 0.8):
     assert 0 < level < 1, "level must be between 0 and 1"
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
@@ -483,20 +522,23 @@ def VIA_risk_CVaR_dual(S, Q, W, P, discount = 0.95,  eps = 1/10, max_iterations=
                     ehat = E(Q[q], S[s], fW_t)
                     for p in range(len_P):
                         def V(pi):
-                            frac_level = level * len_W * len_P
-                            l_level = int(math.ceil(frac_level) - 1)
-                            beta = frac_level - l_level
-                            asc_val = np.sort(U[s_ny_idx, pi, :, :], axis=None)
-                            quantile = asc_val[l_level]
-                            weights = np.where(U[s_ny_idx, pi, :, :]<=quantile, 1/level, 0)
-                            if np.max(U[s_ny_idx, pi, :, :])-np.min(U[s_ny_idx, pi, :, :]) < 1/100:
-                                weights = np.zeros_like(U[s_ny_idx, pi, :, :])+1
+                            #frac_level = level * len_W * len_P
+                            #l_level = int(math.ceil(frac_level) - 1)
+                            #beta = frac_level - l_level
+                            #asc_val = np.sort(U[s_ny_idx, pi, :, :], axis=None)
+                            #quantile = asc_val[l_level]
+                            #weights = np.where(U[s_ny_idx, pi, :, :]<=quantile, 1/level, 0)
+                            #if np.max(U[s_ny_idx, pi, :, :])-np.min(U[s_ny_idx, pi, :, :]) < 1/100:
+                            #    weights = np.zeros_like(U[s_ny_idx, pi, :, :])+1
                             #if t > 1:
                             #    print(t, quantile, level)
                             #    print(pi,U[s_ny_idx, pi, :, :])
                             #    print(pi,weights)
-                            V_plus1 = np.sum(np.multiply(U[s_ny_idx, pi, :, :],weights) * P_trans_wind[w, :, None] * P_trans_price[p,None, :])
-                            return R(Q[q], P[p], ehat)+abs(min_reward) + discount*V_plus1
+                            #V_plus1 = np.sum(np.multiply(U[s_ny_idx, pi, :, :],weights) * P_trans_wind[w, :, None] * P_trans_price[p,None, :])
+                            future_values = U[s_ny_idx, pi, :, :].flatten()
+                            probs = (P_trans_wind[w, :, None] * P_trans_price[p, None, :]).flatten()
+                            V_plus1 = cvar_from_sorted(future_values, probs, level)
+                            return R(Q[q], P[p], ehat) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
                         #print(t,np.argmax(values))
                         Y[s, q, w, p] = max(values)
@@ -574,15 +616,15 @@ RN_reward = neutral_practical_reward_sum/n_sims
 # We then choose the best risk parameter value by the program in step 3 in the article
 
 
-alphas = np.linspace(0.2, 1, 5)[:-1]
-#alphas = [0.1,0.25,0.5,1,1.5,2]
+#alphas = np.linspace(0.2, 1, 5)[:-1]
+alphas = [0.1,0.25,0.5,1,1.5,2]
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,discount=discount, eps=1/10, max_iterations=20, level=alpha)
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,discount=discount, eps=1/10, max_iterations=20, risk_param=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
