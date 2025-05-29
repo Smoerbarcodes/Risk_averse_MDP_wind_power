@@ -66,7 +66,6 @@ P_trans_wind = np.array([[0.626,0.206,0.114,0.042,0.010,0.002,0,0,0,0,0],
                          [0,0,0,0.001,0.006,0.026,0.083,0.177,0.256,0.260,0.191],
                          [0,0,0,0,0.001,0.007,0.031,0.097,0.210,0.317,0.337]])
 
-print(np.sum(P_trans_wind, axis=1)) # Check that the rows sum to 1
 
 # State spaces
 P = np.array([-52.93,-26.47,0,26.47,52.93])
@@ -78,8 +77,6 @@ W = np.array([0,1,2,3,4,5,6,7,8,9,10])
 S = np.arange(0,C_S+eta_a,eta_a)
 Q = np.arange(0,tau*C_T+eta_a,eta_a)
 #Q = np.arange(-C_T,tau*C_T+eta_a,eta_a)
-
-print(S)
 
 
 # Defining functions
@@ -219,7 +216,7 @@ for i in range(len(P)):
             for l in range(len(S)):
                 fW_t = f(W[j])
                 ehat = E(Q[k],S[l],fW_t)
-                Reward_list.append(R(Q[k],P[i],ehat))
+                Reward_list.append(R_scaled(Q[k],P[i],ehat))
                 difs_list.append(ehat-Q[k])
 max_reward = max(Reward_list)
 min_reward = min(Reward_list)
@@ -269,7 +266,8 @@ def VIA_risk_neutral(S, Q, W, P, R, discount = 0.99, eps=1/10, max_iterations=40
                                 V_next[pi] = V_plus1
 
                             values = np.array([
-                                R(Q[q], P[p] + gamma_1_p, ehat) + discount * V_next[pi]
+                                #R(Q[q], P[p] + gamma_1_p, ehat) + discount * V_next[pi]
+                                R(Q[q], P[p], ehat) + discount * V_next[pi]
                                 for pi in range(len_Q)
                             ])
                         #def V(pi):
@@ -312,7 +310,7 @@ def VIA_risk_neutral(S, Q, W, P, R, discount = 0.99, eps=1/10, max_iterations=40
 #----------------------------------------------------------------
 # Risk preferences
 
-def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations=20, risk_param = 0.8):
+def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations=20, risk_param = 0.2):
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
@@ -340,10 +338,10 @@ def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations
                             probs = (P_trans_wind[w, :, None] * P_trans_price[p, None, :]).flatten()
 
                             # entropic risk mapping
-                            risk_value = 1.0 / -risk_param * logsumexp(
-                                risk_param * V_next, b=probs
+                            risk_value = (1.0 / -risk_param ) * logsumexp(
+                                -risk_param * V_next, b=probs
                             )
-                            val = R(Q[q], P[p] + gamma_1_p, ehat) - discount * risk_value
+                            val = R(Q[q], P[p], ehat) + discount * risk_value
                             values.append(val)
                         #def V(pi):
                         #    V_plus1 = np.sum(
@@ -438,7 +436,7 @@ def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=4
                             return R(Q[q], P[p], ehat) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
                         #print(t,np.argmax(values))
-                        Y[s, q, w, p] = max(values)
+                        Y[s, q, w, p] = np.max(values)
                         if t == 1:
                             PI[s, q, w, p] = Q[np.random.choice(len_Q)]
                         else:
@@ -457,7 +455,7 @@ def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=4
         M_ns.append(np.max(Y - U))
         m_ns.append(np.min(Y - U))
 
-        if np.max(Y - U) - np.min(Y - U) <= eps * np.min(Y - U):
+        if np.max(np.abs(Y-U)) <= eps*(1-discount)/(2*discount):
             print("Converged")
             break
         if t > max_iterations:
@@ -470,11 +468,11 @@ def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=4
 
 # ---------------------EVALUATION---------------------------------
 
-n_sims = 1000
+n_sims = 10000
 discount = 0.9
 
 # Risk-neutral evaluation
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R,eps=2, max_iterations=100)
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R_scaled,eps=2, max_iterations=100)
 
 neutral_practical_reward_sum = 0
 neutral_practical_risk = 0
@@ -507,21 +505,24 @@ for _ in range(n_sims):
 RN_risk = neutral_practical_risk/n_sims
 RN_reward = neutral_practical_reward_sum/n_sims
 
+print("RN risk", RN_risk)
+print("RN reward", RN_reward)
+
 # For a chosen risk-preference level, we now run the algorithm for different values of the risk parameter.
 # Next, we simulate practical reward and risk for discrete outcomes, by simulating the process 100 times, and calculating the discounted reward and practical risk.
 # We approximate practial reward by a regression (OLS) of the discounted reward on the risk parameter.
 # We then choose the best risk parameter value by the program in step 3 in the article
 
 
-#alphas = np.linspace(0.2, 1, 5)[:-1]
-alphas = [0.05,0.01,0.02,0.25,0.5,0.75,1]
+#alphas = np.linspace(0.1, 1, 10)[:-1]
+alphas = [0.05,0.01,0.02,0.25,0.5,1,2]
 
 simulated_practical_reward = []
 simulated_practical_risk = []
 
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled,discount=discount, eps=2, max_iterations=10, risk_param=alpha)
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled,discount=discount, eps=2, max_iterations=40, risk_param=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
@@ -579,7 +580,7 @@ plt.title("Practical risk vs risk parameter value")
 plt.legend()
 plt.show()
 
-plt.scatter(alphas,simulated_practical_reward)
+plt.scatter(alphas,simulated_practical_reward, label = "Simulated Data")
 plt.plot(alpha_range,fit_reward, label = "fitted reward")
 plt.xlabel("Risk-parameter value")
 plt.ylabel("Practical reward")
@@ -596,7 +597,8 @@ plt.title("Risk-Reward Tradeoff of Policies")
 plt.show()
 
 
-tradeoffs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+#tradeoffs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+tradeoffs = [0.02,0.05,0.08,0.1,0.15,0.2,0.3,0.5,0.8]
 optimal_practical_reward = []
 optimal_practical_risk = []
 optimal_params = []
@@ -604,16 +606,16 @@ optimal_params = []
 for tradeoff in tradeoffs:
 
     def objective(alpha):
-        return -exp_decay(alpha, *reward_practical)  # We want to maximize reward_practical, so we minimize its negative
+        return -exp_decay(alpha[0], *reward_practical)  # We want to maximize reward_practical, so we minimize its negative
 
     def constraint(alpha):
-        return tradeoff - exp_decay(alpha, *risk_practical)
+        return tradeoff - exp_decay(alpha[0], *risk_practical)
 
     bounds = [(0.001, alphas[-1])]  # Bounds for alpha
-    constraints = {'type': 'ineq', 'fun': constraint}
+    constraints_risk = scipy.optimize.NonlinearConstraint(constraint,0,tradeoff)  # Constraint for risk_practical
 
-    sol = scipy.optimize.minimize_scalar(
-        objective, bounds=(0.001, alphas[-1]), method='bounded', options={'xatol': 1e-5}
+    sol = scipy.optimize.minimize(
+        objective, x0=[0.5], bounds=[(0.001, alphas[-1])], constraints = [constraints_risk], method='SLSQP'
     )
 
     #sol = scipy.optimize.linprog(
@@ -627,7 +629,7 @@ for tradeoff in tradeoffs:
     optimal_params.append(alpha_hat)
 
     # Now we can evaluate the risk-neutral policy with the chosen risk parameter
-    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled,discount=discount, eps=1/10, max_iterations=25, risk_param = alpha_hat)
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled,discount=discount, eps=2, max_iterations=40, risk_param = alpha_hat)
     optimal_practical_reward_sum = 0
     optimal_practical_risk_sim = 0
     for _ in range(n_sims):
@@ -661,5 +663,7 @@ for tradeoff in tradeoffs:
 
 print("tradeoffs", tradeoffs)
 print("Optimal risk param", optimal_params)
+print("practical risk", optimal_practical_risk)
+print("pracical reward", optimal_practical_reward)
 print("practical risk of RN", list(map(lambda x: x/RN_risk, optimal_practical_risk)))
 print("practical reward of RN", list(map(lambda x: x/RN_reward, optimal_practical_reward)))
