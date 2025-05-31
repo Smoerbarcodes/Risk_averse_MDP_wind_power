@@ -472,7 +472,7 @@ n_sims = 10000
 discount = 0.9
 
 # Risk-neutral evaluation
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R_risky,eps=2, max_iterations=100)
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R,eps=2, max_iterations=100)
 
 neutral_practical_reward_sum = 0
 neutral_practical_risk = 0
@@ -487,7 +487,7 @@ for _ in range(n_sims):
         ehat = E(Q[Q_idx], S[S_idx], fW_t)
         if Q[Q_idx] > ehat:
             neutral_practical_risk_count += 1
-        neutral_practical_reward_sum += (discount ** t) * R_risky(Q[Q_idx], P[p_idx], ehat)
+        neutral_practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
 
         # Transition in endogenous variables
         shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
@@ -522,7 +522,7 @@ simulated_practical_risk = []
 
 
 for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R_risky,discount=discount, eps=2, max_iterations=40, level=alpha)
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R,discount=discount, eps=2, max_iterations=40, level=alpha)
 
     # Simulating the process
     practical_reward_sum = 0
@@ -538,7 +538,7 @@ for alpha in alphas:
             ehat = E(Q[Q_idx], S[S_idx], fW_t)
             if Q[Q_idx] > ehat:
                 practical_risk_count += 1
-            practical_reward_sum += (discount ** t) * R_risky(Q[Q_idx], P[p_idx], ehat)
+            practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
 
             # Transition in endogenous variables
             shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
@@ -629,7 +629,7 @@ for tradeoff in tradeoffs:
     optimal_params.append(alpha_hat)
 
     # Now we can evaluate the risk-neutral policy with the chosen risk parameter
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R_risky,discount=discount, eps=2, max_iterations=40, level = alpha_hat)
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R,discount=discount, eps=2, max_iterations=40, level = alpha_hat)
     optimal_practical_reward_sum = 0
     optimal_practical_risk_sim = 0
     for _ in range(n_sims):
@@ -643,7 +643,7 @@ for tradeoff in tradeoffs:
             ehat = E(Q[Q_idx], S[S_idx], fW_t)
             if Q[Q_idx] > ehat:
                 optimal_practical_risk_count += 1
-            optimal_practical_reward_sum += (discount ** t) * R_risky(Q[Q_idx], P[p_idx], ehat)
+            optimal_practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
 
             # Transition in endogenous variables
             shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
