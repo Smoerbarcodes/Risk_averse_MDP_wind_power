@@ -633,7 +633,7 @@ print("practical reward of RN", list(map(lambda x: x/RN_reward, optimal_practica
 
 
 
-# Now for the CVaR
+# Now for the CVaR evaluation
 
 alphas = np.linspace(0.1, 1, 10)[:-1]
 simulated_practical_reward = []
