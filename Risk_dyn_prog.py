@@ -4,9 +4,6 @@ import scipy
 import matplotlib.pyplot as plt
 from scipy.special import logsumexp
 from scipy.optimize import curve_fit
-#from matplotlib import cm
-#from matplotlib.ticker import LinearLocator
-#import random
 import time
 
 #------------------------------------------------
@@ -18,8 +15,6 @@ def find_nearest(array,value):
         return array[idx]
 
 #------------------------------------------------------
-
-scal = 100
 
 # Constants for Markov Model
 K_p_plus = 0.9
@@ -113,6 +108,8 @@ def R(Q_t,P_t,e_t):
         return Q_t*P_t
     elif P_t < 0 and Q_t > e_t:
         return Q_t*P_t - K_n_minus*P_t*(Q_t - e_t)
+
+scal = 100
 
 def R_scaled(Q_t,P_t,e_t):
     if P_t >= 0 and Q_t <= e_t:
@@ -227,7 +224,7 @@ print("Min reward:", min_reward)
 print("Min dif:", min_dif)
 print("Max dif:", max_dif)
 
-#-----------------------------------------------------------
+#-------------------------------------RISK NEUTRAL VALUE ITERATION ALGORITHM---------------------------
 T = 168
 
 S_0 = find_nearest(S,C_S/2)
@@ -236,7 +233,7 @@ xi_0 = 5
 rho_0 = 0
 j_0 = 0
 
-def VIA_risk_neutral(S, Q, W, P, R, discount = 0.99, eps=1/10, max_iterations=40):
+def VIA_risk_neutral(S, Q, W, P, R, discount = 0.9, eps=1/10, max_iterations=100):
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
@@ -304,13 +301,9 @@ def VIA_risk_neutral(S, Q, W, P, R, discount = 0.99, eps=1/10, max_iterations=40
     return PI, U, M_ns, m_ns
 
 
-#----------------------------------------------------------------
+#-------------------------------------RISK PREFERENCES--------------------------------------
 
-
-#----------------------------------------------------------------
-# Risk preferences
-
-def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations=20, risk_param = 0.2):
+def VIA_risk_entropic(S, Q, W, P,R, discount = 0.9,  eps = 1/10, max_iterations=100, risk_param = 0.2):
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
     Y = np.zeros_like(U)
@@ -336,18 +329,12 @@ def VIA_risk_entropic(S, Q, W, P,R, discount = 0.95,  eps = 1/10, max_iterations
                         for pi in range(len_Q):
                             V_next = U[s_ny_idx, pi, :, :].flatten()
                             probs = (P_trans_wind[w, :, None] * P_trans_price[p, None, :]).flatten()
-
                             # entropic risk mapping
                             risk_value = (1.0 / -risk_param ) * logsumexp(
                                 -risk_param * V_next, b=probs
                             )
                             val = R(Q[q], P[p], ehat) + discount * risk_value
                             values.append(val)
-                        #def V(pi):
-                        #    V_plus1 = np.sum(
-                        #        np.exp(-risk_param * (U[s_ny_idx, pi, :, :])) * P_trans_wind[w, :, None] * P_trans_price[p, None, :][0]
-                        #    )
-                        #
                         Y[s, q, w, p] = max(values)
                         PI[s, q, w, p] = Q[np.argmax(values)]
 
@@ -393,7 +380,7 @@ def cvar_from_sorted(values, probs, alpha):
             break
     return cvar_sum / tail_mass
 
-def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=40, level = 0.8):
+def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.9,  eps = 1/10, max_iterations=100, level = 0.2):
     assert 0 < level < 1, "level must be between 0 and 1"
     len_S, len_Q, len_W, len_P = len(S), len(Q), len(W), len(P)
     U = np.zeros((len_S, len_Q, len_W, len_P))
@@ -417,25 +404,11 @@ def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=4
                     ehat = E(Q[q], S[s], fW_t)
                     for p in range(len_P):
                         def V(pi):
-                            #frac_level = level * len_W * len_P
-                            #l_level = int(math.ceil(frac_level) - 1)
-                            #beta = frac_level - l_level
-                            #asc_val = np.sort(U[s_ny_idx, pi, :, :], axis=None)
-                            #quantile = asc_val[l_level]
-                            #weights = np.where(U[s_ny_idx, pi, :, :]<=quantile, 1/level, 0)
-                            #if np.max(U[s_ny_idx, pi, :, :])-np.min(U[s_ny_idx, pi, :, :]) < 1/100:
-                            #    weights = np.zeros_like(U[s_ny_idx, pi, :, :])+1
-                            #if t > 1:
-                            #    print(t, quantile, level)
-                            #    print(pi,U[s_ny_idx, pi, :, :])
-                            #    print(pi,weights)
-                            #V_plus1 = np.sum(np.multiply(U[s_ny_idx, pi, :, :],weights) * P_trans_wind[w, :, None] * P_trans_price[p,None, :])
                             future_values = U[s_ny_idx, pi, :, :].flatten()
                             probs = (P_trans_wind[w, :, None] * P_trans_price[p, None, :]).flatten()
                             V_plus1 = cvar_from_sorted(future_values, probs, level)
                             return R(Q[q], P[p], ehat) + discount*V_plus1
                         values = [V(pi) for pi in range(len_Q)]
-                        #print(t,np.argmax(values))
                         Y[s, q, w, p] = np.max(values)
                         if t == 1:
                             PI[s, q, w, p] = Q[np.random.choice(len_Q)]
@@ -466,18 +439,18 @@ def VIA_risk_CVaR_dual(S, Q, W, P,R, discount = 0.95,  eps = 2, max_iterations=4
 
     return PI, U, M_ns, m_ns
 
-# ---------------------EVALUATION---------------------------------
+# ---------------------EVALUATION----------------------------------------------------
 
-n_sims = 10000
+n_sims = 1
 discount = 0.9
 
-# Risk-neutral evaluation
-PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R,eps=2, max_iterations=100)
+# ------------------- RISK NEUTRAL SIMULATION--------------------------------------------
+PI, U, M_ns, m_ns = VIA_risk_neutral(S,Q,W,P,R,eps=2, max_iterations=2)
 
 neutral_practical_reward_sum = 0
 neutral_practical_risk = 0
 for _ in range(n_sims):
-    p_idx = 0
+    p_idx = 2
     w_idx = 2
     S_idx = int(np.where(S == S_0)[0][0])
     Q_idx = int(np.where(Q == Q_0)[0][0])
@@ -508,30 +481,32 @@ RN_reward = neutral_practical_reward_sum/n_sims
 print("RN risk", RN_risk)
 print("RN reward", RN_reward)
 
+#---------------- ANALYSIS OF RISK-SENSITIVE POLICIES--------------------------------------------
+
 # For a chosen risk-preference level, we now run the algorithm for different values of the risk parameter.
 # Next, we simulate practical reward and risk for discrete outcomes, by simulating the process 100 times, and calculating the discounted reward and practical risk.
 # We approximate practial reward by a regression (OLS) of the discounted reward on the risk parameter.
 # We then choose the best risk parameter value by the program in step 3 in the article
 
+# First for the entropic risk measure
 
-alphas = np.linspace(0.1, 1, 10)[:-1]
-#alphas = [0.05,0.01,0.02,0.25,0.5,1,2]   # We might want to change this
-
+gammas = [0.05,0.1,0.15,0.2,0.25,0.5,1,2]
 simulated_practical_reward = []
 simulated_practical_risk = []
 
 
-for alpha in alphas:
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R,discount=discount, eps=2, max_iterations=40, level=alpha)
+for gamma in gammas:
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled, risk_param=gamma)
 
-    # Simulating the process
+    # Simulating the process2
     practical_reward_sum = 0
     practical_risk = 0
     for _ in range(n_sims):
-        p_idx = 0
+        p_idx = 2
         w_idx = 2
         S_idx = int(np.where(S == S_0)[0][0])
         Q_idx = int(np.where(Q == Q_0)[0][0])
+        print("risk averse", PI[S_idx, Q_idx, w_idx, p_idx])
         practical_risk_count = 0
         for t in range(T):
             fW_t = f(W[w_idx])*100
@@ -542,7 +517,6 @@ for alpha in alphas:
 
             # Transition in endogenous variables
             shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
-            q = PI[S_idx, Q_idx, w_idx, p_idx]
             Q_idx = int(np.where(Q == q)[0][0])
             s_ny = find_nearest(S, S[S_idx] + shat)
             S_idx = int(np.where(S == s_ny)[0][0])
@@ -559,14 +533,156 @@ for alpha in alphas:
 print("risk", simulated_practical_risk)
 print("reward", simulated_practical_reward)
 
-#risk_practical = np.polyfit(alphas, simulated_practical_risk, deg = 2)
-#reward_practical = np.polyfit(alphas, simulated_practical_reward, deg = 2)
+
+def exp_decay(gamma, a, b, c):
+    return a * np.exp(-b * gamma) + c
+
+risk_practical, _ = curve_fit(exp_decay, gammas, simulated_practical_risk, p0=[0.004, 2.0, 0.05], maxfev=5000)
+reward_practical,_ = curve_fit(exp_decay, gammas, simulated_practical_reward, p0=[0.004, 2.0, 0.05], maxfev=5000)
+
+gamma_range = np.linspace(gammas[0], gammas[-1], 100)
+fit_risk = exp_decay(gamma_range, *risk_practical)
+fit_reward = exp_decay(gamma_range, *reward_practical)
+
+plt.plot(gammas,simulated_practical_risk, 'o', label='Simulated Data')
+plt.plot(gamma_range,fit_risk, label = "fitted risk")
+plt.xlabel("Risk-parameter value")
+plt.ylabel("Practical risk")
+plt.title("Practical risk vs risk parameter value")
+plt.legend()
+plt.show()
+
+plt.scatter(gammas,simulated_practical_reward, label = "Simulated Data")
+plt.plot(gamma_range,fit_reward, label = "fitted reward")
+plt.xlabel("Risk-parameter value")
+plt.ylabel("Practical reward")
+plt.title("Practical reward vs risk parameter value")
+plt.legend()
+plt.show()
+
+plt.plot(simulated_practical_risk, simulated_practical_reward, 'o-')
+for i, param in enumerate(simulated_practical_risk):
+    plt.text(simulated_practical_risk[i], simulated_practical_reward[i], f"{param:.2f}", fontsize=9)
+plt.xlabel("Practical Risk (P(Q > e))")
+plt.ylabel("Expected Reward")
+plt.title("Risk-Reward Tradeoff of Policies")
+plt.show()
+
+tradeoffs = [0.02,0.05,0.08,0.1,0.15,0.2,0.3,0.5,0.8]
+optimal_practical_reward = []
+optimal_practical_risk = []
+optimal_params = []
+
+for tradeoff in tradeoffs:
+
+    def objective(gamma):
+        return -exp_decay(gamma[0], *reward_practical)  # We want to maximize reward_practical, so we minimize its negative
+
+    def constraint(gamma):
+        return tradeoff - exp_decay(gamma[0], *risk_practical)
+
+    bounds = [(0.001, gammas[-1])]  # Bounds for alpha
+    constraints_risk = scipy.optimize.NonlinearConstraint(constraint,0,tradeoff)  # Constraint for risk_practical
+
+    sol = scipy.optimize.minimize(
+        objective, x0=[0.5], bounds=[(0.001, gammas[-1])], constraints = [constraints_risk], method='SLSQP'
+    )
+
+    gamma_hat = sol.x
+    optimal_params.append(gamma_hat)
+
+    # Now we can evaluate the risk-neutral policy with the chosen risk parameter
+    PI, U, M_ns, m_ns = VIA_risk_entropic(S,Q,W,P,R_scaled, risk_param = gamma_hat)
+    optimal_practical_reward_sum = 0
+    optimal_practical_risk_sim = 0
+    for _ in range(n_sims):
+        p_idx = 2
+        w_idx = 2
+        S_idx = int(np.where(S == S_0)[0][0])
+        Q_idx = int(np.where(Q == Q_0)[0][0])
+        optimal_practical_risk_count = 0
+        for t in range(T):
+            fW_t = f(W[w_idx]) * 100
+            ehat = E(Q[Q_idx], S[S_idx], fW_t)
+            if Q[Q_idx] > ehat:
+                optimal_practical_risk_count += 1
+            optimal_practical_reward_sum += (discount ** t) * R_risky(Q[Q_idx], P[p_idx], ehat)
+
+            # Transition in endogenous variables
+            shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
+            q = PI[S_idx, Q_idx, w_idx, p_idx]
+            Q_idx = int(np.where(Q == q)[0][0])
+            s_ny = find_nearest(S, S[S_idx] + shat)
+            S_idx = int(np.where(S == s_ny)[0][0])
+
+            # Transition in exogenous variables
+            p_idx = np.random.choice(list(range(len(P))), p=P_trans_price[p_idx, None, :][0])
+            w_idx = np.random.choice(list(range(len(W))), p=np.ndarray.flatten(P_trans_wind[w_idx, :, None]))
+
+        optimal_practical_risk_sim += optimal_practical_risk_count/T
+
+    optimal_practical_risk.append(optimal_practical_risk_sim/n_sims)
+    optimal_practical_reward.append(optimal_practical_reward_sum/n_sims)
+
+print("tradeoffs", tradeoffs)
+print("Optimal risk param", optimal_params)
+print("practical risk", optimal_practical_risk)
+print("pracical reward", optimal_practical_reward)
+print("practical risk of RN", list(map(lambda x: x/RN_risk, optimal_practical_risk)))
+print("practical reward of RN", list(map(lambda x: x/RN_reward, optimal_practical_reward)))
+
+
+
+# Now for the CVaR
+
+alphas = np.linspace(0.1, 1, 10)[:-1]
+simulated_practical_reward = []
+simulated_practical_risk = []
+
+
+for alpha in alphas:
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R, level =alpha)
+
+    # Simulating the process2
+    practical_reward_sum = 0
+    practical_risk = 0
+    for _ in range(n_sims):
+        p_idx = 2
+        w_idx = 2
+        S_idx = int(np.where(S == S_0)[0][0])
+        Q_idx = int(np.where(Q == Q_0)[0][0])
+        print("risk averse", PI[S_idx, Q_idx, w_idx, p_idx])
+        practical_risk_count = 0
+        for t in range(T):
+            fW_t = f(W[w_idx])*100
+            ehat = E(Q[Q_idx], S[S_idx], fW_t)
+            if Q[Q_idx] > ehat:
+                practical_risk_count += 1
+            practical_reward_sum += (discount ** t) * R(Q[Q_idx], P[p_idx], ehat)
+
+            # Transition in endogenous variables
+            shat = s_hat(S[S_idx], Q[Q_idx], fW_t)
+            Q_idx = int(np.where(Q == q)[0][0])
+            s_ny = find_nearest(S, S[S_idx] + shat)
+            S_idx = int(np.where(S == s_ny)[0][0])
+
+            # Transition in exogenous variables
+            p_idx = np.random.choice(list(range(len(P))), p = P_trans_price[p_idx, None, :][0])
+            w_idx = np.random.choice(list(range(len(W))), p = np.ndarray.flatten(P_trans_wind[w_idx, :, None]))
+
+        practical_risk += practical_risk_count/T
+
+    simulated_practical_risk.append(practical_risk/n_sims)
+    simulated_practical_reward.append(practical_reward_sum/n_sims)
+
+print("risk", simulated_practical_risk)
+print("reward", simulated_practical_reward)
 
 def exp_decay(alpha, a, b, c):
     return a * np.exp(-b * alpha) + c
 
-risk_practical, _ = curve_fit(exp_decay, alphas, simulated_practical_risk, p0=[1.0, 10.0, 0.0])
-reward_practical,_ = curve_fit(exp_decay, alphas, simulated_practical_reward, p0=[1.0, 10.0, 0.0])
+risk_practical, _ = curve_fit(exp_decay, alphas, simulated_practical_risk, p0=[0.004, 2.0, 0.05], maxfev=5000)
+reward_practical,_ = curve_fit(exp_decay, alphas, simulated_practical_reward, p0=[0.004, 2.0, 0.05], maxfev=5000)
 
 alpha_range = np.linspace(alphas[0], alphas[-1], 100)
 fit_risk = exp_decay(alpha_range, *risk_practical)
@@ -597,7 +713,6 @@ plt.title("Risk-Reward Tradeoff of Policies")
 plt.show()
 
 
-#tradeoffs = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 tradeoffs = [0.02,0.05,0.08,0.1,0.15,0.2,0.3,0.5,0.8]
 optimal_practical_reward = []
 optimal_practical_risk = []
@@ -618,22 +733,15 @@ for tradeoff in tradeoffs:
         objective, x0=[0.5], bounds=[(0.001, alphas[-1])], constraints = [constraints_risk], method='SLSQP'
     )
 
-    #sol = scipy.optimize.linprog(
-    #c=-reward_practical,  # Maximize reward_practical (negated for linprog's minimization)
-    #A_ub=[risk_practical],  # Linear constraint on risk_practical
-    #b_ub=[tradeoff],  # Replace `some_threshold` with the desired upper bound for risk
-    #bounds=(0.001, alphas[-1])  # No bounds on the decision variables
-    #)
-
     alpha_hat = sol.x
     optimal_params.append(alpha_hat)
 
     # Now we can evaluate the risk-neutral policy with the chosen risk parameter
-    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R,discount=discount, eps=2, max_iterations=40, level = alpha_hat)
+    PI, U, M_ns, m_ns = VIA_risk_CVaR_dual(S,Q,W,P,R, level = alpha_hat)
     optimal_practical_reward_sum = 0
     optimal_practical_risk_sim = 0
     for _ in range(n_sims):
-        p_idx = 0
+        p_idx = 2
         w_idx = 2
         S_idx = int(np.where(S == S_0)[0][0])
         Q_idx = int(np.where(Q == Q_0)[0][0])
@@ -667,3 +775,5 @@ print("practical risk", optimal_practical_risk)
 print("pracical reward", optimal_practical_reward)
 print("practical risk of RN", list(map(lambda x: x/RN_risk, optimal_practical_risk)))
 print("practical reward of RN", list(map(lambda x: x/RN_reward, optimal_practical_reward)))
+
+# Evaluation in the risky world happens by replacing every R-function with the corresponding R_risky function.
